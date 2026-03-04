@@ -11,29 +11,32 @@
 
 void setAddress(int);
 byte read(int);
-void read(int, int);
+void read(uint16_t, uint16_t);
 void write(int, byte);
 
-void fastWrite(int address, byte data) {
-  setAddress(address);
-  for (int pin = eeprom_D0; pin <= eeprom_D7; pin++) {
-    pinMode(pin, OUTPUT);
-    digitalWrite(pin, (data >> (pin - eeprom_D0)) & 0x01);
-  }
-  digitalWrite(WE, LOW);
-  delayMicroseconds(1);
-  digitalWrite(WE, HIGH);
-  // No 10ms delay here!
+void fastWrite(int address, byte data)
+{
+    setAddress(address);
+    for (int pin = eeprom_D0; pin <= eeprom_D7; pin++)
+    {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, (data >> (pin - eeprom_D0)) & 0x01);
+    }
+    digitalWrite(WE, LOW);
+    delayMicroseconds(1);
+    digitalWrite(WE, HIGH);
+    // No 10ms delay here!
 }
 
-void unlockSDP() {
-  fastWrite(0x5555, 0xAA);
-  fastWrite(0x2AAA, 0x55);
-  fastWrite(0x5555, 0x80);
-  fastWrite(0x5555, 0xAA);
-  fastWrite(0x2AAA, 0x55);
-  fastWrite(0x5555, 0x20);
-  delay(10); // Final delay after the whole sequence
+void unlockSDP()
+{
+    fastWrite(0x5555, 0xAA);
+    fastWrite(0x2AAA, 0x55);
+    fastWrite(0x5555, 0x80);
+    fastWrite(0x5555, 0xAA);
+    fastWrite(0x2AAA, 0x55);
+    fastWrite(0x5555, 0x20);
+    delay(10); // Final delay after the whole sequence
 }
 
 void setup()
@@ -51,20 +54,25 @@ void setup()
     digitalWrite(WE, HIGH);
     digitalWrite(OE, LOW);
     digitalWrite(CE, LOW);
-    unlockSDP();
+    read(0x0000, 0x7fff);
+    // unlockSDP();
     // byte data = read(0x00);
     // Serial.print("0x00 : ");
     // Serial.println(data, HEX);
     // byte val = read(0x00);
     // Serial.println(val, HEX);
     // Serial.println(read(0b101010101011111));
-    write(0x5555, 0xaa);
-    Serial.println(read(0x5555));
+    write(0x00, 0xaa);
+    // Serial.println(read(0x000));
     // delay(1);
     // read(0x5550, 0x555f);
     // val = read(0x00);
     // Serial.println(val, HEX);
+    // delay(5000);
     // digitalWrite(CE, HIGH);
+    delay(5000);
+    read(0x00);
+    // setAddress(0x00);
 }
 
 void setAddress(int address)
@@ -94,9 +102,9 @@ byte read(int address)
     return data;
 }
 
-void read(int start, int stop)
+void read(uint16_t start, uint16_t stop)
 {
-    for (int address = start; address <= stop; address++)
+    for (uint16_t address = start; address <= stop; address++)
     {
         byte data = read(address);
         if (address % 16 == 0)
@@ -111,8 +119,8 @@ void read(int start, int stop)
         Serial.print(" ");
         if (address % 16 == 15)
             Serial.println();
-        if (address == 0x7fff) // last address: 7fff
-            break;
+        // if (address == 0x7fff) // last address: 7fff
+        //     break;
     }
 }
 
@@ -134,6 +142,8 @@ void write(int address, byte data)
     digitalWrite(WE, HIGH);
     delay(10);
     digitalWrite(OE, LOW);
+    for (int pin = eeprom_D0; pin <= eeprom_D7; pin++)
+        pinMode(pin, INPUT);
 }
 
 void loop()
