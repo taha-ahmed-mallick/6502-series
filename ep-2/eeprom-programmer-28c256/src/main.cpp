@@ -1,11 +1,11 @@
 #include <Arduino.h>
 
-#define DS A0
-#define SHCP A1
-#define STCP A2
-#define WE A3
-#define OE A4
-#define CE A5
+#define DS 11
+#define SHCP 13
+#define STCP 10
+#define WE A0
+#define OE A1
+#define CE A2
 #define eeprom_D0 2
 #define eeprom_D7 9
 
@@ -42,7 +42,7 @@ void unlockSDP()
 void setup()
 {
     // put your setup code here, to run once:
-    Serial.begin(57600);
+    Serial.begin(115200);
 
     pinMode(STCP, OUTPUT);
     pinMode(SHCP, OUTPUT);
@@ -110,11 +110,11 @@ void read(uint16_t start, uint16_t stop)
         if (address % 16 == 0)
         {
             char format[12];
-            sprintf(format, "0x%04x : ", address);
+            sprintf(format, "0x%04X : ", address);
             Serial.print(format);
         }
         char format[3];
-        sprintf(format, "%02x", data);
+        sprintf(format, "%02X", data);
         Serial.print(format);
         Serial.print(" ");
         if (address % 16 == 15)
