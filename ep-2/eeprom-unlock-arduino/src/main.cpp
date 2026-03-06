@@ -70,11 +70,9 @@ void setAddress(uint16_t addr)
     PORTB |= (1 << STCP);
 }
 
-uint8_t read(uint16_t addr)
+uint8_t readRaw(uint16_t addr)
 {
     setAddress(addr);    // Set the address to read from
-    PORTC |= (1 << WE);  // WE HIGH (Inactive)
-    PORTC &= ~(1 << OE); // OE LOW (Active)
     __asm__("nop");      // Short delay to allow signals to stabilize
     uint8_t data = 0;
     // Read the data from the Data Bus (D2-D7, D8-D9)
@@ -83,7 +81,7 @@ uint8_t read(uint16_t addr)
     return data;
 }
 
-void write(uint16_t addr, uint8_t data)
+void writeRaw(uint16_t addr, uint8_t data)
 {
     setAddress(addr); // Set the address to write to
 
@@ -103,50 +101,104 @@ void SDPUnlock()
     PORTC |= (1 << OE); // OE HIGH (Inactive)
     PORTC |= (1 << WE); // WE HIGH (Inactive)
 
-    write(0x5555, 0xAA);
-    write(0x2AAA, 0x55);
-    write(0x5555, 0x80);
-    write(0x5555, 0xAA);
-    write(0x2AAA, 0x55);
-    write(0x5555, 0x20);
+    writeRaw(0x5555, 0xAA);
+    writeRaw(0x2AAA, 0x55);
+    writeRaw(0x5555, 0x80);
+    writeRaw(0x5555, 0xAA);
+    writeRaw(0x2AAA, 0x55);
+    writeRaw(0x5555, 0x20);
     delay(11);
-    write(0x0000, 0x42); // Check
+    writeRaw(0x0000, 0x42); // Check
     delay(11);
+}
+
+void read(uint16_t start, uint16_t stop)
+{
+    setDataBusInput();
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)
+    PORTC &= ~(1 << OE); // OE LOW (Active)
+
+    for (uint16_t address = start; address <= stop; address++)
+    {
+        uint8_t data = readRaw(address);
+        if (address % 16 == 0)
+        {
+            char format[12];
+            sprintf(format, "0x%04X : ", address);
+            Serial.print(format);
+        }
+        char format[5];
+        sprintf(format, "%02X", data);
+        Serial.print(format);
+        Serial.print(" ");
+        if (address % 16 == 15)
+            Serial.println();
+    }
+    Serial.println("=====================Read Complete======================"); // Final newline after reading is done
+}
+
+void blank(uint16_t start = 0x0000, uint16_t stop = 0x7fff)
+{
+    setDataBusOutput(); // Switch Data Bus to OUTPUT mode
+    PORTC |= (1 << OE); // OE HIGH (Inactive)
+    PORTC |= (1 << WE); // WE HIGH (Inactive)
+
+    for (uint16_t address = start; address <= stop; address++){
+        writeRaw(address, 0xFF);
+        delay(11); // Wait for the write cycle to complete tWC = 10
+        Serial.print("Wrote at address: 0x");
+        Serial.println(address, HEX);
+    }
+}
+
+void write(uint16_t addr, uint8_t data) {
+    setDataBusOutput(); // Switch Data Bus to OUTPUT mode
+    PORTC |= (1 << OE); // OE HIGH (Inactive)
+    PORTC |= (1 << WE); // WE HIGH (Inactive)
+    writeRaw(addr, data);
+    delay(11); // Wait for the write cycle to complete tWC = 10
+}
+
+uint8_t read(uint16_t addr) {
+    setDataBusInput(); // Switch Data Bus to INPUT mode
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)
+    PORTC &= ~(1 << OE); // OE LOW (Active)
+    delayMicroseconds(1); // Short delay to allow signals to stabilize
+    return readRaw(addr);
 }
 
 void setup()
 {
     // put your setup code here, to run once:
+    DDRC |= 0x07; // Set A0-A2 as OUTPUT (0b00000111) Control PINS
+    PORTC |= 0x07; // Set A0-A2 HIGH (0b00000111) Inactive State for Control PINS
+    delay(1); // just to settle things down
+    // setting up serial communication
     Serial.begin(115200);
+    while(!Serial); // Wait for Serial to be ready (for native USB devices)
+    delay(2000); // Give the user a moment to open the Serial Monitor
     Serial.println("System Starting...");
     // Setting Up Hardware SPI
     DDRB |= 0b00101100; // Set D10 (SS), D11 (MOSI), D13 (SCK) as OUTPUT ADDR PINS
-    SPCR = 0b01010000;  // Enable SPI, Master Mode, Clock = Fosc/16=1MHz
+    SPCR = 0b01010001;  // Enable SPI, Master Mode, Clock = Fosc/16=1MHz
     SPSR = 0x00;        // Clearing the register
     setAddress(0x0000); // Clear any garbage on the shift registers
-
-    DDRC |= 0x07; // Set A0-A2 as OUTPUT (0b00000111) Control PINS
 
     PORTC &= ~(1 << CE); // CE LOW (Active)
 
     PORTC |= (1 << WE);                // WE HIGH (Inactive)
     PORTC &= ~(1 << OE);               // OE LOW (Active)
-    setDataBusInput();                 // Start with Data Bus in INPUT mode (for reading)
-    Serial.println(read(0x0000), HEX); // Before
+    
+    // blank(); // Blank the EEPROM to 0xFF (All bits set to 1)
+    // delay(100); // Just to be safe, give it a moment to finish blanking
 
-    setDataBusOutput();  // Switch Data Bus to OUTPUT mode
-    PORTC |= (1 << OE);  // OE HIGH (Inactive)
-    PORTC |= (1 << WE);  // WE HIGH (Inactive)
-    write(0x0000, 0xAA); // Write a test value to the EEPROM
-    delay(11);           // Wait for the write cycle to complete tWC = 10
+    read(0x0000, 0x000F); // Read the eeprom
 
-    setDataBusInput();                 // Start with Data Bus in INPUT mode (for reading)
-    Serial.println(read(0x0000), HEX); // After writing 0xAA, we should read back 0xAA
+    for (int i = 0; i < 16; i++)
+        write(i, i+50); // Write values 0x0F to 0x00 to addresses 0x0000 to 0x000F
 
-    // SDPUnlock(); // Unlock the EEPROM for writing
+    read(0x0000, 0x000F); // Read the eeprom
 
-    // setDataBusInput(); // Start with Data Bus in INPUT mode (for reading)
-    // Serial.println(read(0x0000), HEX); // After
     PORTC |= (1 << CE); // CE HIGH (Inactive)
 }
 
