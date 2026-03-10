@@ -1,0 +1,25 @@
+FT:
+PA1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+PB0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13, 14, 15
+PC13, 14, 15
+
+ADC: PA0-7, PB0-1
+PB5 is TC
+
+Serial Comm: PA11-12
+
+PC have some quirks
+
+PA13, PA14 and PB11 physically missing on the board
+
+final list:
+    FT:
+        PA8, 9, 10, 15
+        PB2, 3, 4, 6, 7, 8, 9, 10, 12, 13, 14, 15
+    TC:
+        PA0, 1, 2, 3, 4, 5, 6, 7
+        PB0, 1
+
+Data Bus (D0-D7): Use PB2-4, PB6-10. (All FT)
+Clock & R/W: Use PB12 and PB13. (Both FT)
+Address Bus (A0-15): PA0-7, PB0-1 (non FT), PA8-10, 15, PB14-15
