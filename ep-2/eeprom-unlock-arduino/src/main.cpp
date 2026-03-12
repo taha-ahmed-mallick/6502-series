@@ -72,8 +72,8 @@ void setAddress(uint16_t addr)
 
 uint8_t readRaw(uint16_t addr)
 {
-    setAddress(addr);    // Set the address to read from
-    __asm__("nop");      // Short delay to allow signals to stabilize
+    setAddress(addr); // Set the address to read from
+    __asm__("nop");   // Short delay to allow signals to stabilize
     uint8_t data = 0;
     // Read the data from the Data Bus (D2-D7, D8-D9)
     data |= ((PIND >> 2) & 0x3F); // Shift D2-D7 down to bits 0-5
@@ -118,23 +118,66 @@ void read(uint16_t start, uint16_t stop)
     PORTC |= (1 << WE);  // WE HIGH (Inactive)
     PORTC &= ~(1 << OE); // OE LOW (Active)
 
+    bool firstRead = true;
+    char format[64];
+    bool patternPrinted = false;
+    uint8_t prevData[16];
+    uint8_t currentData[16];
+
     for (uint16_t address = start; address <= stop; address++)
     {
         uint8_t data = readRaw(address);
-        if (address % 16 == 0)
+        if (firstRead)
         {
-            char format[12];
-            sprintf(format, "0x%04X : ", address);
-            Serial.print(format);
+            prevData[address % 16] = data;
+            if (address % 16 == 15)
+            {
+                firstRead = false;
+                sprintf(format, "0x%04X : %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x\n", address - 15, prevData[0], prevData[1], prevData[2], prevData[3], prevData[4], prevData[5], prevData[6], prevData[7], prevData[8], prevData[9], prevData[10], prevData[11], prevData[12], prevData[13], prevData[14], prevData[15]);
+                Serial.print(format);
+            }
         }
-        char format[5];
-        sprintf(format, "%02X", data);
-        Serial.print(format);
-        Serial.print(" ");
-        if (address % 16 == 15)
-            Serial.println();
+        else
+        {
+            currentData[address % 16] = data;
+            if (address % 16 == 15)
+            {
+                // Compare currentData with prevData
+                bool currentMatch = true;
+                for (int i = 0; i < 16; i++)
+                    if (currentData[i] != prevData[i])
+                    {
+                        currentMatch = false;
+                        break;
+                    }
+                if (!currentMatch)
+                {
+                    if (patternPrinted)
+                    {
+                        patternPrinted = false;
+                        char format[16];
+                        sprintf(format, "0x%04X : *\n", address - 31);
+                        Serial.print(format);
+                    }
+                    sprintf(format, "0x%04X : %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x\n", address - 15, currentData[0], currentData[1], currentData[2], currentData[3], currentData[4], currentData[5], currentData[6], currentData[7], currentData[8], currentData[9], currentData[10], currentData[11], currentData[12], currentData[13], currentData[14], currentData[15]);
+                    Serial.print(format);
+                    // Copy currentData to prevData for the next comparison
+                    memcpy(prevData, currentData, 16);
+                }
+                else
+                {
+                    patternPrinted = true;
+                    if (address == stop)
+                    {
+                        char format[16];
+                        sprintf(format, "0x%04X : *\n", address - 15);
+                        Serial.print(format);
+                    }
+                }
+            }
+        }
     }
-    Serial.println("=====================Read Complete======================"); // Final newline after reading is done
+    Serial.println("======================Read Complete======================"); // Final newline after reading is done
 }
 
 void blank(uint16_t start = 0x0000, uint16_t stop = 0x7fff)
@@ -143,15 +186,36 @@ void blank(uint16_t start = 0x0000, uint16_t stop = 0x7fff)
     PORTC |= (1 << OE); // OE HIGH (Inactive)
     PORTC |= (1 << WE); // WE HIGH (Inactive)
 
-    for (uint16_t address = start; address <= stop; address++){
+    uint16_t totalBytes = stop - start + 1;
+    int barWidth = 40, pos= 0, unit = (totalBytes-1) / 40; // Blanking: [/40/] 000%
+    float progress = 0;
+    for (uint16_t address = start; address <= stop; address++)
+    {
         writeRaw(address, 0xFF);
         delay(11); // Wait for the write cycle to complete tWC = 10
-        Serial.print("Wrote at address: 0x");
-        Serial.println(address, HEX);
+        if ((address - start) % unit == 0 || address == stop) {
+            progress = (float)(address - start) / totalBytes;
+        pos = progress*barWidth;
+        Serial.print("\e[2K\e[GBlanking: [");
+        for (int i = 0; i < barWidth; i++)
+        {
+            if (i < pos)
+                Serial.print("-");
+            else if (i == pos)
+                Serial.print(">");
+            else
+                Serial.print(".");
+        }
+        char format[8];
+        sprintf(format, "] %03d%%", (int)(progress * 100));
+        Serial.print(format);
+        }
     }
+    Serial.println("\n====================Blanking Complete====================");
 }
 
-void write(uint16_t addr, uint8_t data) {
+void write(uint16_t addr, uint8_t data)
+{
     setDataBusOutput(); // Switch Data Bus to OUTPUT mode
     PORTC |= (1 << OE); // OE HIGH (Inactive)
     PORTC |= (1 << WE); // WE HIGH (Inactive)
@@ -159,10 +223,11 @@ void write(uint16_t addr, uint8_t data) {
     delay(11); // Wait for the write cycle to complete tWC = 10
 }
 
-uint8_t read(uint16_t addr) {
-    setDataBusInput(); // Switch Data Bus to INPUT mode
-    PORTC |= (1 << WE);  // WE HIGH (Inactive)
-    PORTC &= ~(1 << OE); // OE LOW (Active)
+uint8_t read(uint16_t addr)
+{
+    setDataBusInput();    // Switch Data Bus to INPUT mode
+    PORTC |= (1 << WE);   // WE HIGH (Inactive)
+    PORTC &= ~(1 << OE);  // OE LOW (Active)
     delayMicroseconds(1); // Short delay to allow signals to stabilize
     return readRaw(addr);
 }
@@ -170,12 +235,13 @@ uint8_t read(uint16_t addr) {
 void setup()
 {
     // put your setup code here, to run once:
-    DDRC |= 0x07; // Set A0-A2 as OUTPUT (0b00000111) Control PINS
     PORTC |= 0x07; // Set A0-A2 HIGH (0b00000111) Inactive State for Control PINS
-    delay(1); // just to settle things down
+    DDRC |= 0x07;  // Set A0-A2 as OUTPUT (0b00000111) Control PINS
+    delay(1);      // just to settle things down
     // setting up serial communication
     Serial.begin(115200);
-    while(!Serial); // Wait for Serial to be ready (for native USB devices)
+    while (!Serial)
+        ;        // Wait for Serial to be ready (for native USB devices)
     delay(2000); // Give the user a moment to open the Serial Monitor
     Serial.println("System Starting...");
     // Setting Up Hardware SPI
@@ -186,18 +252,13 @@ void setup()
 
     PORTC &= ~(1 << CE); // CE LOW (Active)
 
-    PORTC |= (1 << WE);                // WE HIGH (Inactive)
-    PORTC &= ~(1 << OE);               // OE LOW (Active)
-    
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)
+    PORTC &= ~(1 << OE); // OE LOW (Active)
+
     // blank(); // Blank the EEPROM to 0xFF (All bits set to 1)
     // delay(100); // Just to be safe, give it a moment to finish blanking
-
-    read(0x0000, 0x000F); // Read the eeprom
-
-    for (int i = 0; i < 16; i++)
-        write(i, i+50); // Write values 0x0F to 0x00 to addresses 0x0000 to 0x000F
-
-    read(0x0000, 0x000F); // Read the eeprom
+    blank(0x0000, 0x00ff);
+    read(0x0000, 0x00ff); // Read whole eeprom
 
     PORTC |= (1 << CE); // CE HIGH (Inactive)
 }
