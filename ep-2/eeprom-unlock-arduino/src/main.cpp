@@ -187,28 +187,29 @@ void blank(uint16_t start = 0x0000, uint16_t stop = 0x7fff)
     PORTC |= (1 << WE); // WE HIGH (Inactive)
 
     uint16_t totalBytes = stop - start + 1;
-    int barWidth = 40, pos= 0, unit = (totalBytes-1) / 40; // Blanking: [/40/] 000%
+    int barWidth = 40, pos = 0, unit = (totalBytes - 1) / 40; // Blanking: [/40/] 000%
     float progress = 0;
     for (uint16_t address = start; address <= stop; address++)
     {
         writeRaw(address, 0xFF);
         delay(11); // Wait for the write cycle to complete tWC = 10
-        if ((address - start) % unit == 0 || address == stop) {
-            progress = (float)(address - start) / totalBytes;
-        pos = progress*barWidth;
-        Serial.print("\e[2K\e[GBlanking: [");
-        for (int i = 0; i < barWidth; i++)
+        if ((address - start) % unit == 0 || address == stop)
         {
-            if (i < pos)
-                Serial.print("-");
-            else if (i == pos)
-                Serial.print(">");
-            else
-                Serial.print(".");
-        }
-        char format[8];
-        sprintf(format, "] %03d%%", (int)(progress * 100));
-        Serial.print(format);
+            progress = (float)(address - start) / totalBytes;
+            pos = progress * barWidth;
+            Serial.print("\e[2K\e[GBlanking: [");
+            for (int i = 0; i < barWidth; i++)
+            {
+                if (i < pos)
+                    Serial.print("-");
+                else if (i == pos)
+                    Serial.print(">");
+                else
+                    Serial.print(".");
+            }
+            char format[8];
+            sprintf(format, "] %03d%%", (int)(progress * 100));
+            Serial.print(format);
         }
     }
     Serial.println("\n====================Blanking Complete====================");
@@ -234,9 +235,12 @@ uint8_t read(uint16_t addr)
 
 int8_t pageWrite(uint16_t startAddr, uint8_t *data, uint8_t length)
 {
-    if (startAddr > 0x7FFF) return 0; // Address out of range
-    if ((startAddr % 64) != 0) return -1; // Inalignment error: start address must be a multiple of 64
-    if (length == 0 || length > 64) return -2; // Invalid length: must be between 1 and 64
+    if (startAddr > 0x7FFF)
+        return 0; // Address out of range
+    if ((startAddr % 64) != 0)
+        return -1; // Inalignment error: start address must be a multiple of 64
+    if (length == 0 || length > 64)
+        return -2; // Invalid length: must be between 1 and 64
 
     setDataBusOutput(); // Switch Data Bus to OUTPUT mode
     PORTC |= (1 << OE); // OE HIGH (Inactive)
@@ -275,8 +279,14 @@ void setup()
 
     // blank(); // Blank the EEPROM to 0xFF (All bits set to 1)
     // delay(100); // Just to be safe, give it a moment to finish blanking
-    blank(0x0000, 0x00ff);
-    read(0x0000, 0x00ff); // Read whole eeprom
+    uint8_t arr[64];
+    for (uint8_t i = 0; i < 64; i++)
+        (i % 2 == 0) ? (arr[i] = 0x55) : (arr[i] = 0xAA); // Fill the array with a checkerboard pattern
+    for (uint16_t i = 0; i < 512; i++)
+    {
+        pageWrite(i * 64, arr, 64); // Write the checkerboard pattern to the first 64 pages (4096 bytes)
+    }
+    read(0x0000, 0x7fff); // Read whole eeprom
 
     PORTC |= (1 << CE); // CE HIGH (Inactive)
 }
