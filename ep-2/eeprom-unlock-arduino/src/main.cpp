@@ -232,6 +232,24 @@ uint8_t read(uint16_t addr)
     return readRaw(addr);
 }
 
+int8_t pageWrite(uint16_t startAddr, uint8_t *data, uint8_t length)
+{
+    if (startAddr > 0x7FFF) return 0; // Address out of range
+    if ((startAddr % 64) != 0) return -1; // Inalignment error: start address must be a multiple of 64
+    if (length == 0 || length > 64) return -2; // Invalid length: must be between 1 and 64
+
+    setDataBusOutput(); // Switch Data Bus to OUTPUT mode
+    PORTC |= (1 << OE); // OE HIGH (Inactive)
+    PORTC |= (1 << WE); // WE HIGH (Inactive)
+
+    uint8_t bytesWritten = 0;
+    for (; bytesWritten < length; bytesWritten++)
+        writeRaw(startAddr + bytesWritten, data[bytesWritten]);
+
+    delay(11); // just required after the last byte is written, tWC = 10ms
+    return bytesWritten;
+}
+
 void setup()
 {
     // put your setup code here, to run once:
