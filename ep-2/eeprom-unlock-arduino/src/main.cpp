@@ -143,14 +143,18 @@ void read(uint16_t start, uint16_t stop)
             if (address % 16 == 15)
             {
                 // Compare currentData with prevData
-                bool currentMatch = true;
-                for (int i = 0; i < 16; i++)
-                    if (currentData[i] != prevData[i])
+                bool currentMatch = memcmp(currentData, prevData, 16) == 0;
+                if (currentMatch)
+                {
+                    patternPrinted = true;
+                    if (address == stop)
                     {
-                        currentMatch = false;
-                        break;
+                        char format[16];
+                        sprintf(format, "0x%04X : *\n", address - 15);
+                        Serial.print(format);
                     }
-                if (!currentMatch)
+                }
+                else
                 {
                     if (patternPrinted)
                     {
@@ -163,16 +167,6 @@ void read(uint16_t start, uint16_t stop)
                     Serial.print(format);
                     // Copy currentData to prevData for the next comparison
                     memcpy(prevData, currentData, 16);
-                }
-                else
-                {
-                    patternPrinted = true;
-                    if (address == stop)
-                    {
-                        char format[16];
-                        sprintf(format, "0x%04X : *\n", address - 15);
-                        Serial.print(format);
-                    }
                 }
             }
         }
