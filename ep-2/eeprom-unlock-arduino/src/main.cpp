@@ -29,6 +29,7 @@ the EEPROM’s output drivers.*/
 // PINB: D8-D13
 // PINC: A0-A5
 
+// CORE FUNCTIONS
 void setDataBusInput()
 {
     DDRD &= ~0xFC;  // Set D2-D7 as INPUT (0b00000011)
@@ -70,6 +71,7 @@ void setAddress(uint16_t addr)
     PORTB |= (1 << STCP);
 }
 
+// BASIC FUNCTIONS
 uint8_t readRaw(uint16_t addr)
 {
     setAddress(addr); // Set the address to read from
@@ -95,11 +97,36 @@ void writeRaw(uint16_t addr, uint8_t data)
     PORTC |= (1 << WE);  // WE HIGH (Inactive)
 }
 
+int8_t pageWrite(uint16_t startAddr, uint8_t *data, uint8_t length)
+{
+    if (startAddr > 0x7FFF)
+        return 0; // Address out of range
+    if ((startAddr % 64) != 0)
+        return -1; // Inalignment error: start address must be a multiple of 64
+    if (length == 0 || length > 64)
+        return -2; // Invalid length: must be between 1 and 64
+
+    setDataBusOutput();  // Switch Data Bus to OUTPUT mode
+    PORTC |= (1 << OE);  // OE HIGH (Inactive)
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)1
+    PORTC &= ~(1 << CE); // CE LOW (Active)
+
+    uint8_t bytesWritten = 0;
+    for (; bytesWritten < length; bytesWritten++)
+        writeRaw(startAddr + bytesWritten, data[bytesWritten]);
+
+    delay(11);          // just required after the last byte is written, tWC = 10ms
+    PORTC |= (1 << CE); // CE HIGH (Inactive)
+    return bytesWritten;
+}
+
+// UTILITY FUNCTIONS
 void SDPUnlock()
 {
-    setDataBusOutput(); // Switch Data Bus to OUTPUT mode
-    PORTC |= (1 << OE); // OE HIGH (Inactive)
-    PORTC |= (1 << WE); // WE HIGH (Inactive)
+    PORTC &= ~(1 << CE); // CE LOW (Active)
+    setDataBusOutput();  // Switch Data Bus to OUTPUT mode
+    PORTC |= (1 << OE);  // OE HIGH (Inactive)
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)
 
     writeRaw(0x5555, 0xAA);
     writeRaw(0x2AAA, 0x55);
@@ -108,12 +135,14 @@ void SDPUnlock()
     writeRaw(0x2AAA, 0x55);
     writeRaw(0x5555, 0x20);
     delay(11);
-    writeRaw(0x0000, 0x42); // Check
-    delay(11);
+    // writeRaw(0x0000, 0x42); // Check
+    // delay(11);
+    PORTC |= (1 << CE); // CE HIGH (Inactive)
 }
 
 void read(uint16_t start, uint16_t stop)
 {
+    PORTC &= ~(1 << CE); // CE LOW (Active)
     setDataBusInput();
     PORTC |= (1 << WE);  // WE HIGH (Inactive)
     PORTC &= ~(1 << OE); // OE LOW (Active)
@@ -171,24 +200,43 @@ void read(uint16_t start, uint16_t stop)
             }
         }
     }
+    PORTC |= (1 << CE);                                                          // CE HIGH (Inactive)
     Serial.println("======================Read Complete======================"); // Final newline after reading is done
 }
 
 void blank(uint16_t start = 0x0000, uint16_t stop = 0x7fff)
 {
-    setDataBusOutput(); // Switch Data Bus to OUTPUT mode
-    PORTC |= (1 << OE); // OE HIGH (Inactive)
-    PORTC |= (1 << WE); // WE HIGH (Inactive)
+    PORTC &= ~(1 << CE); // CE LOW (Active)
+    setDataBusOutput();  // Switch Data Bus to OUTPUT mode
+    PORTC |= (1 << OE);  // OE HIGH (Inactive)
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)
 
     uint16_t totalBytes = stop - start + 1;
-    int barWidth = 40, pos = 0, unit = (totalBytes - 1) / 40; // Blanking: [/40/] 000%
+    int barWidth = 40, pos = 0; // Blanking: [/40/] 000%
     float progress = 0;
-    for (uint16_t address = start; address <= stop; address++)
+
+    uint8_t page[64]; // Buffer for page writes, pre-filled with 0xFF
+    memset(page, 0xFF, sizeof(page));
+
+    if (start%64 !=0) {
+        // If start address is not page-aligned, we need to write bytes one by one until we reach the next page boundary
+        for (; start < stop && (start % 64) != 0; start++) {
+            writeRaw(start, 0xFF);
+            delay(11); // Wait for the write cycle to complete tWC = 10
+        }
+    }
+
+    if (stop %64 != 63) {
+        // If stop address is not the end of a page, we need to write bytes one by one from the last page boundary until we reach stop
+        for (; stop > start && (stop % 64) != 63; stop--) {
+            writeRaw(stop, 0xFF);
+            delay(11); // Wait for the write cycle to complete tWC = 10
+        }
+    }
+
+    for (uint16_t address = start; address <= stop; address+=64)
     {
-        writeRaw(address, 0xFF);
-        delay(11); // Wait for the write cycle to complete tWC = 10
-        if ((address - start) % unit == 0 || address == stop)
-        {
+        pageWrite(address, page, 64); // Write a full page of 0xFF
             progress = (float)(address - start) / totalBytes;
             pos = progress * barWidth;
             Serial.print("\e[2K\e[GBlanking: [");
@@ -202,50 +250,33 @@ void blank(uint16_t start = 0x0000, uint16_t stop = 0x7fff)
                     Serial.print(".");
             }
             char format[8];
-            sprintf(format, "] %03d%%", (int)(progress * 100));
+            sprintf(format, "] %03d%%", (int)round(progress * 100));
             Serial.print(format);
-        }
     }
+    PORTC |= (1 << CE); // CE HIGH (Inactive)
     Serial.println("\n====================Blanking Complete====================");
 }
 
 void write(uint16_t addr, uint8_t data)
 {
-    setDataBusOutput(); // Switch Data Bus to OUTPUT mode
-    PORTC |= (1 << OE); // OE HIGH (Inactive)
-    PORTC |= (1 << WE); // WE HIGH (Inactive)
+    PORTC &= ~(1 << CE); // CE LOW (Active)
+    setDataBusOutput();  // Switch Data Bus to OUTPUT mode
+    PORTC |= (1 << OE);  // OE HIGH (Inactive)
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)
     writeRaw(addr, data);
-    delay(11); // Wait for the write cycle to complete tWC = 10
+    delay(11);          // Wait for the write cycle to complete tWC = 10
+    PORTC |= (1 << CE); // CE HIGH (Inactive)
 }
 
 uint8_t read(uint16_t addr)
 {
+    PORTC &= ~(1 << CE);  // CE LOW (Active)
     setDataBusInput();    // Switch Data Bus to INPUT mode
     PORTC |= (1 << WE);   // WE HIGH (Inactive)
     PORTC &= ~(1 << OE);  // OE LOW (Active)
     delayMicroseconds(1); // Short delay to allow signals to stabilize
+    PORTC |= (1 << CE);   // CE HIGH (Inactive)
     return readRaw(addr);
-}
-
-int8_t pageWrite(uint16_t startAddr, uint8_t *data, uint8_t length)
-{
-    if (startAddr > 0x7FFF)
-        return 0; // Address out of range
-    if ((startAddr % 64) != 0)
-        return -1; // Inalignment error: start address must be a multiple of 64
-    if (length == 0 || length > 64)
-        return -2; // Invalid length: must be between 1 and 64
-
-    setDataBusOutput(); // Switch Data Bus to OUTPUT mode
-    PORTC |= (1 << OE); // OE HIGH (Inactive)
-    PORTC |= (1 << WE); // WE HIGH (Inactive)
-
-    uint8_t bytesWritten = 0;
-    for (; bytesWritten < length; bytesWritten++)
-        writeRaw(startAddr + bytesWritten, data[bytesWritten]);
-
-    delay(11); // just required after the last byte is written, tWC = 10ms
-    return bytesWritten;
 }
 
 void setup()
@@ -267,10 +298,9 @@ void setup()
     setAddress(0x0000); // Clear any garbage on the shift registers
 
     PORTC &= ~(1 << CE); // CE LOW (Active)
-
     PORTC |= (1 << WE);  // WE HIGH (Inactive)
     PORTC &= ~(1 << OE); // OE LOW (Active)
-
+    
     // blank(); // Blank the EEPROM to 0xFF (All bits set to 1)
     // delay(100); // Just to be safe, give it a moment to finish blanking
     uint8_t arr[64];
@@ -281,11 +311,32 @@ void setup()
         pageWrite(i * 64, arr, 64); // Write the checkerboard pattern to the first 64 pages (4096 bytes)
     }
     read(0x0000, 0x7fff); // Read whole eeprom
-
-    PORTC |= (1 << CE); // CE HIGH (Inactive)
+    Serial.println("Awaiting Commands...");
 }
 
 void loop()
 {
     // put your main code here, to run repeatedly:
+    while (Serial.available() > 0)
+    {
+        char cmd = Serial.read();
+        // v-> version, b -> blank, r -> read, w -> write, d -> disable, e-> enable
+        switch (cmd)
+        {
+        case 'v':
+            Serial.println("EEPROM PROGRAMMER v1.0 --- Active");
+            break;
+        case 'b':
+            blank();
+            break;
+        case 'r':
+            read(0x0000, 0x7fff);
+            break;
+        case 'w':
+            break;
+        default:
+            Serial.println("Unknown command.");
+            break;
+        }
+    }
 }
