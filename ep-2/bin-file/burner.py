@@ -1,6 +1,5 @@
 import serial
 import time
-import os
 import subprocess
 
 def get_windows_file():
