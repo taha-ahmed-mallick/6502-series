@@ -24,7 +24,7 @@ void setup()
     // GPIOA->PUPDR |= 0x40155555;
     // GPIOB->PUPDR |= 0x55155155;
     pinMode(PB12, INPUT);
-    attachInterrupt(digitalPinToInterrupt(PB12), onClock, FALLING); // FALLING
+    attachInterrupt(digitalPinToInterrupt(PB12), onClock, RISING); // FALLING
     pinMode(PC13, OUTPUT);
     digitalWrite(PC13, HIGH);
 }
