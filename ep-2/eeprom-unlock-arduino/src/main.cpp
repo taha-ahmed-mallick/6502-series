@@ -108,7 +108,7 @@ int8_t pageWrite(uint16_t startAddr, uint8_t *data, uint8_t length)
 
     setDataBusOutput();  // Switch Data Bus to OUTPUT mode
     PORTC |= (1 << OE);  // OE HIGH (Inactive)
-    PORTC |= (1 << WE);  // WE HIGH (Inactive)1
+    PORTC |= (1 << WE);  // WE HIGH (Inactive)
     PORTC &= ~(1 << CE); // CE LOW (Active)
 
     uint8_t bytesWritten = 0;
@@ -218,40 +218,44 @@ void blank(uint16_t start = 0x0000, uint16_t stop = 0x7fff)
     uint8_t page[64]; // Buffer for page writes, pre-filled with 0xFF
     memset(page, 0xFF, sizeof(page));
 
-    if (start%64 !=0) {
+    if (start % 64 != 0)
+    {
         // If start address is not page-aligned, we need to write bytes one by one until we reach the next page boundary
-        for (; start < stop && (start % 64) != 0; start++) {
+        for (; start < stop && (start % 64) != 0; start++)
+        {
             writeRaw(start, 0xFF);
             delay(11); // Wait for the write cycle to complete tWC = 10
         }
     }
 
-    if (stop %64 != 63) {
+    if (stop % 64 != 63)
+    {
         // If stop address is not the end of a page, we need to write bytes one by one from the last page boundary until we reach stop
-        for (; stop > start && (stop % 64) != 63; stop--) {
+        for (; stop > start && (stop % 64) != 63; stop--)
+        {
             writeRaw(stop, 0xFF);
             delay(11); // Wait for the write cycle to complete tWC = 10
         }
     }
 
-    for (uint16_t address = start; address <= stop; address+=64)
+    for (uint16_t address = start; address <= stop; address += 64)
     {
         pageWrite(address, page, 64); // Write a full page of 0xFF
-            progress = (float)(address - start) / totalBytes;
-            pos = progress * barWidth;
-            Serial.print("\e[2K\e[GBlanking: [");
-            for (int i = 0; i < barWidth; i++)
-            {
-                if (i < pos)
-                    Serial.print("-");
-                else if (i == pos)
-                    Serial.print(">");
-                else
-                    Serial.print(".");
-            }
-            char format[8];
-            sprintf(format, "] %03d%%", (int)round(progress * 100));
-            Serial.print(format);
+        progress = (float)(address - start) / totalBytes;
+        pos = progress * barWidth;
+        Serial.print("\e[2K\e[GBlanking: [");
+        for (int i = 0; i < barWidth; i++)
+        {
+            if (i < pos)
+                Serial.print("-");
+            else if (i == pos)
+                Serial.print(">");
+            else
+                Serial.print(".");
+        }
+        char format[8];
+        sprintf(format, "] %03d%%", (int)round(progress * 100));
+        Serial.print(format);
     }
     PORTC |= (1 << CE); // CE HIGH (Inactive)
     Serial.println("\n====================Blanking Complete====================");
@@ -279,6 +283,75 @@ uint8_t read(uint16_t addr)
     return readRaw(addr);
 }
 
+void writeCmd()
+{
+    uint8_t buffer[64];
+    uint8_t checksum = 0;
+    uint32_t startTime = millis();
+
+    // 1. Read the 16-bit Address (High byte first)
+    while (Serial.available() < 2)
+        if (millis() - startTime > 1000)
+        {
+            Serial.println("ERR: ADDR_TIMEOUT");
+            return;
+        }
+
+    uint16_t addr = (uint16_t)Serial.read() << 8;
+    addr |= Serial.read();
+
+    // 2. Read 64 bytes of raw binary data
+    for (int i = 0; i < 64; i++)
+    {
+        while (Serial.available() == 0)
+            if (millis() - startTime > 2000)
+            {
+                Serial.println("ERR: DATA_TIMEOUT");
+                return;
+            }
+        buffer[i] = Serial.read();
+        checksum += buffer[i]; // Additive checksum
+    }
+
+    // 3. Read the Checksum byte
+    while (Serial.available() == 0)
+        if (millis() - startTime > 1000)
+        {
+            Serial.println("ERR: CHK_TIMEOUT");
+            return;
+        }
+    uint8_t receivedChecksum = Serial.read();
+
+    // 4. Verify and Commit
+    if (checksum == receivedChecksum)
+    {
+        int8_t result = pageWrite(addr, buffer, 64);
+        if (result == 64)
+        {
+            Serial.println("OK ACK");
+        }
+        else
+        {
+            Serial.print("ERR: PAGEWRITE_CODE_");
+            Serial.println(result);
+            if (result == 0)
+                Serial.println("ERR: ADDR_OUT_OF_RANGE");
+            else if (result == -1)
+                Serial.println("ERR: ADDR_NOT_PAGE_ALIGNED");
+            else if (result == -2)
+                Serial.println("ERR: INVALID_LENGTH");
+        }
+    }
+    else
+    {
+        Serial.print("ERR: CHK_MISMATCH (Calc:");
+        Serial.print(checksum, HEX);
+        Serial.print(" Recv:");
+        Serial.print(receivedChecksum, HEX);
+        Serial.println(")");
+    }
+}
+
 void setup()
 {
     // put your setup code here, to run once:
@@ -300,17 +373,6 @@ void setup()
     PORTC &= ~(1 << CE); // CE LOW (Active)
     PORTC |= (1 << WE);  // WE HIGH (Inactive)
     PORTC &= ~(1 << OE); // OE LOW (Active)
-    
-    // blank(); // Blank the EEPROM to 0xFF (All bits set to 1)
-    // delay(100); // Just to be safe, give it a moment to finish blanking
-    uint8_t arr[64];
-    for (uint8_t i = 0; i < 64; i++)
-        (i % 2 == 0) ? (arr[i] = 0x55) : (arr[i] = 0xAA); // Fill the array with a checkerboard pattern
-    for (uint16_t i = 0; i < 512; i++)
-    {
-        pageWrite(i * 64, arr, 64); // Write the checkerboard pattern to the first 64 pages (4096 bytes)
-    }
-    read(0x0000, 0x7fff); // Read whole eeprom
     Serial.println("Awaiting Commands...");
 }
 
@@ -333,6 +395,20 @@ void loop()
             read(0x0000, 0x7fff);
             break;
         case 'w':
+            writeCmd();
+            break;
+        case 'R': // Capital R for Raw/Robot read
+            setDataBusInput();
+            PORTC &= ~(1 << CE);
+            PORTC &= ~(1 << OE);
+            PORTC |= (1 << WE);
+            for (uint32_t i = 0; i <= 0x7FFF; i++)
+            {
+                Serial.write(readRaw(i)); // Send raw binary byte
+                delayMicroseconds(1); // Short delay to prevent overwhelming the serial buffer
+            }
+            PORTC |= (1 << CE);
+            PORTC |= (1 << OE);
             break;
         default:
             Serial.println("Unknown command.");
