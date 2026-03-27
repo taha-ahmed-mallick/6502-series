@@ -1,6 +1,31 @@
 import serial
 import time
+import os
 import subprocess
+
+def handle_asm_conversion(filepath):
+    """If the file is .s or .asm, assemble it and return the path to the new .bin"""
+    name, ext = os.path.splitext(filepath)
+    
+    if ext.lower() in ['.s', '.asm']:
+        bin_path = name + "_compiled.bin"
+        print(f"--- Assembling {ext} file to {bin_path} ---")
+        
+        try:
+            # Running vasm from your global alias/path
+            subprocess.run(["vasm6502_oldstyle", "-dotdir", "-Fbin", "-o", bin_path, filepath], check=True)
+            return bin_path
+        except Exception as e:
+            print(f"Error during assembly: {e}")
+            return None
+            
+    return filepath # It's already a .bin, return unchanged
+
+def cleanup_temp_bin(original_path, current_path):
+    """Deletes the bin file ONLY if it was generated from an assembly file."""
+    if original_path != current_path and os.path.exists(current_path):
+        os.remove(current_path)
+        print(f"--- Cleaned up temporary file: {current_path} ---")
 
 def get_windows_file():
     """Opens a Windows File Picker and returns the WSL path."""
@@ -9,7 +34,7 @@ def get_windows_file():
     ps_script = (
         "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; "
         "$f = New-Object System.Windows.Forms.OpenFileDialog; "
-        "$f.Filter = 'Binary Files (*.bin)|*.bin|All Files (*.*)|*.*'; "
+        "$f.Filter = '6502 Files (*.bin, *.s, *.asm)|*.bin;*.s;*.asm|All Files (*.*)|*.*'; "
         "if($f.ShowDialog() -eq 'OK'){ $f.FileName }"
     )
 
@@ -76,12 +101,13 @@ def verify_rom(ser, original_data):
 
 def upload_rom():
     # 1. Select the file
-    filepath = get_windows_file()
-    if not filepath:
+    selectedFile = get_windows_file()
+    if not selectedFile:
         print("No file selected. Exiting.")
         return
 
-    print(f"Selected: {filepath}")
+    print(f"Selected: {selectedFile}")
+    filepath = handle_asm_conversion(selectedFile) # Convert if it's an assembly file
 
     # 2. Read the binary
     with open(filepath, 'rb') as f:
@@ -137,11 +163,11 @@ def upload_rom():
 
         print("\nSuccess! NitroBurner 65 task complete.")
         verify_rom(ser, rom_data)
-
     except Exception as e:
         print(f"\nError: {e}")
     finally:
         if 'ser' in locals(): ser.close()
+        cleanup_temp_bin(selectedFile, filepath) # Clean up if we created a temp bin
 
 if __name__ == "__main__":
     upload_rom()
