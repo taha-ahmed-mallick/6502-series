@@ -109,6 +109,9 @@ def upload_rom():
     print(f"Selected: {selectedFile}")
     filepath = handle_asm_conversion(selectedFile) # Convert if it's an assembly file
 
+    if filepath is None:
+        print("Failed to process the selected file. Exiting.")
+        return
     # 2. Read the binary
     with open(filepath, 'rb') as f:
         rom_data = f.read()
