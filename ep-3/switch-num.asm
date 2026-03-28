@@ -7,16 +7,16 @@ reset:
     lda #$aa
     sta $6000
 
-    ldy #$55
-    sty $4000
+    ldx #$55
+    stx $4000
     lda #$00
-    ldy #$00
+    ldx #$00
 loop:
     lda $6000
-    ldy $4000
+    ldx $4000
 
     sta $4000
-    sty $6000
+    stx $6000
     jmp loop
 
     .org $fffc
