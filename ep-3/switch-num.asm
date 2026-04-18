@@ -3,7 +3,7 @@ reset:
     sta $6000
     stx $6000
     sty $6000
-    ; all registers were set to 0
+    ; all registers weren't set to 0 (they were in a random state)
     lda #$aa
     sta $6000
 
