@@ -12,6 +12,8 @@ RS = %00100000
 
     .org $8000
 reset:
+    ldx #$ff
+    txs ; Initialize stack pointer
 ; setting up necessary pins for output
     lda #%11111111
     sta DDRB
