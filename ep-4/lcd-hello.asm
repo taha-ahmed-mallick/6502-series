@@ -32,49 +32,42 @@ reset:
     lda #%00000001 ; Clear display
     jsr lcd_instruction
 
-    lda #"H" ; loading character 'H'
+    ldx #$00
+display:
+    lda message, x
+    beq loop
     jsr print_char
-
-    lda #"e" ; loading character 'e'
-    jsr print_char
-
-    lda #"l" ; loading character 'l'
-    jsr print_char
-
-    lda #"l" ; loading character 'l'
-    jsr print_char
-
-    lda #"o" ; loading character 'o'
-    jsr print_char
-
-    lda #"," ; loading character ','
-    jsr print_char
-
-    lda #" " ; loading character ' '
-    jsr print_char
-
-    lda #"w" ; loading character 'w'
-    jsr print_char
-
-    lda #"o" ; loading character 'o'
-    jsr print_char
-
-    lda #"r" ; loading character 'r'
-    jsr print_char
-
-    lda #"l" ; loading character 'l'
-    jsr print_char
-
-    lda #"d" ; loading character 'd'
-    jsr print_char
-
-    lda #"!" ; loading character '!'
-    jsr print_char
+    inx
+    jmp display
 
 loop:
     jmp loop
 
+message: .asciiz "Hello, world!"
+
+lcd_wait:
+    pha
+    lda #%00000000
+    sta DDRB ; Set PORTB as input
+lcdbusy:
+    lda #RW ; Set RW
+    sta PORTA
+    lda #(RW | E) ; Set RW and E
+    sta PORTA
+    lda PORTB ; Read busy flag
+    and #%10000000 ; Check if busy flag is set
+    bne lcdbusy ; If busy, keep checking
+
+    lda #RW ; Set RW
+    sta PORTA
+    lda #%11111111
+    sta DDRB ; Set PORTB back to output
+    pla
+    rts
+
+
 lcd_instruction:
+    jsr lcd_wait
     sta PORTB
     lda #0 ; clear RS/RW/E
     sta PORTA
@@ -87,6 +80,7 @@ lcd_instruction:
     rts
 
 print_char:
+    jsr lcd_wait
     sta PORTB
     lda #RS ; set RS
     sta PORTA
